@@ -12,6 +12,7 @@
   "extra": {
     "installer-name": "linkerton"
   },
+  "minimum-stability": "stable",
   "require": {
     "php": ">=5.5",
     "ext-curl": "*",
