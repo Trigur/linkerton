@@ -1,0 +1,27 @@
+{
+    "name": "imagecms/linkerton",
+    "type": "imagecms-module",
+    "description": "ImageCMS module",
+    "keywords": [
+        "ImageCMS module",
+        "module",
+        "linker",
+        "linkerton"
+    ],
+    "homepage": "https://github.com/Trigur/linkerton",
+    "authors": [
+        {
+            "name": "Trigur",
+            "email": "trigur@yandex.ru",
+            "homepage": "https://github.com/Trigur"
+        }
+    ],
+    "extra": {
+        "installer-name": "linkerton",
+    },
+    "require": {
+        "php": ">=5.5",
+        "ext-curl": "*",
+        "composer/installers": "^1.0"
+    }
+}
