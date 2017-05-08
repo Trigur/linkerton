@@ -1,40 +1,51 @@
 <?php
-
 if (!defined('BASEPATH'))
     exit('No direct script access allowed');
 
 /*
+    Модуль для разработчиков.
+    
+    Доступные функции:
+    _withFields - Устанавливаем, что результат надо возвращать с подключенными дополнительными полями. Например $CI->linkerton->_withFields()->_getNext(1);
+
+    _getMore - работает как пагинация. Шлем номер страницы категории - получаем массив со страницами.
+
+    _getSimilar - похожие страницы. По умолчанию сортировка случайная, иначе - как установлено в категории.
+
+    _getNext - следующие страницы после текущей.
+    _getPrev - предыдущие страницы перед текущей.
+
     Автор модуля imageCMS:
     trigur@yandex.ru
-
-
-    _getMore
-    _getSimilar
-    _getNext
-    _getPrev
  */
 
 class Linkerton extends MY_Controller
 {
-	private $category = false;
+    private $category = false;
+    private $needFields = false;
 
-	public function __construct() {
+    public function __construct()
+    {
         parent::__construct();
     }
 
     /**
-     * Инициализация категории страницы
+     * Инициализация категории страницы.
      *
      * @param  integer $categoryId
      * @return bool
      */
-    private function _init($categoryId)
+    private function _setCategory($categoryId)
     {
+        if (! $categoryId) {
+            return false;
+        }
+
         if ($this->category['id'] == $categoryId){
             return true;
         }
 
-        $this->category = getCategory($categoryId);
+        $this->category = $this->lib_category->get_category($categoryId);
 
         if ($this->category) {
             $this->category['fetch_pages'] = unserialize($this->category['fetch_pages']);
@@ -46,9 +57,9 @@ class Linkerton extends MY_Controller
     }
 
     /**
-     * Начальное формирования запроса в бд при _getMore или _getSimilar
+     * Начальное формирования запроса в бд при _getMore или _getSimilar.
      *
-     * @param  object  $db
+     * @param  object $db
      * @return null
      */
     private function _setCatQuery(&$db)
@@ -71,17 +82,17 @@ class Linkerton extends MY_Controller
     }
 
     /**
-     * Похожие страницы
+     * Получить больше.
      *
-     * @param  integer $categoryId 
-     * @param  integer $pageNum
-     * @param  bool    $checkNext - проверять, есть ли еще страницы после текущей.
-     * @param  integer $indent - отступ. Нужен в случае, если есть необходимость выделить несколько первых страниц, а остальные показывать стандартным способом.
-     * @return array
+     * @param  integer $categoryId - id категории.
+     * @param  integer $pageNum    - номер страницы. Отсчет начинается с 0.
+     * @param  bool    $checkNext  - проверять, есть ли еще страницы после текущей.
+     * @param  integer $indent     - отступ. Нужен в случае, если есть необходимость выделить несколько первых страниц, а остальные показывать стандартным способом.
+     * @return array || false
      */
-    public function _getMore($categoryId, $pageNum, $checkNext = true, $indent = 0)
+    public function _getMore($categoryId, $pageNum = 0, $checkNext = true, $indent = 0)
     {
-        if ($this->_init($categoryId)){
+        if ($this->_setCategory($categoryId)){
             $this->_setCatQuery($this->db);
 
             $result = [];
@@ -96,7 +107,7 @@ class Linkerton extends MY_Controller
                 $offset += $indent;
             }
 
-            $result['pages'] = $this->db->get('content', $this->category['per_page'], $offset);
+            $result['pages'] = $this->db->get('content', $this->category['per_page'], $offset)->result_array();
             
             if ($indent) {
                 $result['pages'] = array_slice($result['pages'], $indent);
@@ -106,47 +117,60 @@ class Linkerton extends MY_Controller
                 if (count($result['pages']) > $this->category['per_page']) {
                     $result = [
                         'pages' => array_slice($result['pages'], 0, $this->category['per_page']),
-                        'more' => true,
+                        'hasMore' => true,
                     ];
                 } else {
-                    $result['more'] = false;
+                    $result['hasMore'] = false;
                 }
             }
 
+            $result['pages'] = $this->_prepareResult($result['pages'], 'many');
+
             return $result;
         }
+
+        return $this->_prepareResult(false);
     }
 
     /**
-     * Похожие страницы
+     * Похожие страницы.
      *
-     * @param  integer $categoryId
-     * @param  integer $pageId
-     * @param  integer $limit
-     * @return array
+     * @param  integer || array $page  - id или массив с данными страницы.
+     * @param  integer || false $limit - количество страниц в результате. По умолчанию устанавливается как per_page категории.
+     * @param  integer $randomOrder    - сортировать в случайном порядке.
+     * @return array || false
      */
-    public function _getSimilar($categoryId, $pageId, $limit = 4)
+    public function _getSimilar($page, $limit = false, $isRandom = true)
     {
-        if ($this->_init($categoryId)){
+        $page = is_array($page) ? $page : get_page((int) $page);
+
+        if ($page && $this->_setCategory($page['category'])){
+            if ($randomOrder) {
+                $this->db->order_by('content.id', 'random');
+            }
+
             $this->_setCatQuery($this->db);
 
             $limit = $limit ? $limit : $this->category['per_page'];
 
-            $this->db->where('content.id !=', $pageId);
-            $query = $this->db->get('content', $limit);
-            
-            return $query->result_array();
+            $this->db->where('content.id !=', $page['id']);
+
+            $result = $this->db->get('content', $limit)->result_array();
+
+            return $this->_prepareResult($result, 'many');
         }
+
+        return $this->_prepareResult(false);
     }
 
     /**
-     * Начальное формирования запроса в бд при _getNext или _getPrev
+     * Начальное формирования запроса в бд при _getNext или _getPrev.
      *
      * @param  object  $db
      * @param  string $compareSign
      * @return null
      */
-    private function _setPrevNextQuery(&$db, $compareSign)
+    private function _setPrevNextQuery(&$db, $page, $compareSign)
     {
         $db->select("content.*, IF(route.parent_url <> '', concat(route.parent_url, '/', route.url), route.url) as full_url", false);
         $db->where('content.post_status', 'publish');
@@ -170,76 +194,129 @@ class Linkerton extends MY_Controller
     }
 
     /**
-     * Следующая страница
+     * Следующие страницы.
      *
-     * @param  integer $categoryId
-     * @param  integer || array $page
+     * @param  integer || array $page  - id или массив с данными страницы.
      * @param  integer $limit
      * @return false || array
      */
-    public function _getNext($categoryId, $page, $limit = 1) {
-        if ($this->_init($categoryId)){
-            $page = is_array($page) ? $page : get_page((int)$page);
-            if ($page) {
-                if ($this->category['sort_order'] == 'asc') {
+    public function _getNext($page, $limit = 1)
+    {
+        $page = is_array($page) ? $page : get_page((int)$page);
+
+        if ($this->_setCategory($page['category'])){
+            switch ($this->category['sort_order']) {
+                case 'asc':
                     $compareSign = ' >=';
-                } else {
+                    break;
+                case 'desc':
                     $compareSign = ' <=';
-                }
+                    break;
+                default:
+                    $compareSign = '';
+                    break;
+            }
 
-                $this->_setPrevNextQuery($this->db, $compareSign);
+            $this->_setPrevNextQuery($this->db, $page, $compareSign);
 
-                if ($limit > 1) {
-                    return $this->db->get('content', $limit)->result_array();
-                } else {
-                    return $this->db->get('content')->row_array();
-                }
+            if ($limit > 1) {
+                $result = $this->db->get('content', $limit)->result_array();
+
+                return $this->_prepareResult($result, 'many');
+            } else {
+                $result = $this->db->get('content')->row_array();
+
+                return $this->_prepareResult($result, 'one');
             }
         }
 
-        return false;
+        return $this->_prepareResult(false);
     }
 
     /**
-     * Предыдущая страница
+     * Предыдущая страница.
      *
-     * @param  integer $categoryId
-     * @param  integer || array $page
+     * @param  integer || array $page  - id или массив с данными страницы.
      * @param  integer $limit
      * @return false || array
      */
-    public function _getPrev($categoryId, $page, $limit = 1) {
-        if ($this->_init($categoryId)){
-            $page = is_array($page) ? $page : get_page((int)$page);
-            if ($page) {
-                $sortArr = [
-                    'asc' => 'desc', 
-                    'desc' => 'asc'
-                ];
+    public function _getPrev($page, $limit = 1)
+    {
+        $page = is_array($page) ? $page : get_page((int)$page);
 
-                if ($sortArr[$this->category['sort_order']] == 'asc') {
-                    $compareSign = ' >=';
-                } else {
+        if ($page && $this->_setCategory($page['category'])){
+            switch ($this->category['sort_order']) {
+                case 'asc':
                     $compareSign = ' <=';
-                }
+                    break;
+                case 'desc':
+                    $compareSign = ' >=';
+                    break;
+                default:
+                    $compareSign = '';
+                    break;
+            }
 
-                $this->_setPrevNextQuery($this->db, $compareSign);
+            $this->_setPrevNextQuery($this->db, $page, $compareSign);
 
-                if ($limit > 1) {
-                    return $this->db->get('content', $limit)->result_array();
-                } else {
-                    return $this->db->get('content')->row_array();
-                }
+            if ($limit > 1) {
+                $result = $this->db->get('content', $limit)->result_array();
+
+                return $this->_prepareResult($result, 'many');
+            } else {
+                $result = $this->db->get('content')->row_array();
+
+                return $this->_prepareResult($result, 'one');
             }
         }
 
-        return false;
+        return $this->_prepareResult(false);
+    }
+
+    /**
+     * Устанавливаем, что результат надо возвращать с подключенными дополнительными полями
+     *
+     * @return null
+     */
+    public function _withFields()
+    {
+        $this->needFields = true;
+        return $this;
+    }
+
+    private function _prepareResult($data, $type = 'many')
+    {
+        if (! $this->needFields) {
+            return $data;
+        }
+
+        $this->needFields = false;
+
+        if (! $data) {
+            return false;
+        }
+
+        if ($type == 'one') {
+            $data = [$data];
+        }
+
+        $this->load->module('cfcm');
+        foreach ($data as $key => $item) {
+            $data[$key] = $this->cfcm->connect_fields($item, 'page');
+        }
+
+        if ($type == 'one') {
+            return $data[0];
+        }
+
+        return $data;
     }
 
     /*
-        Установка модуля
+        Установка модуля.
     */
-    public function _install() {
+    public function _install()
+    {
         if (! $this->dx_auth->is_admin()) {
             $this->core->error_404();
         }
