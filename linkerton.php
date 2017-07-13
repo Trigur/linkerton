@@ -4,7 +4,7 @@ if (!defined('BASEPATH'))
 
 /*
     Модуль для разработчиков.
-    
+
     Доступные функции:
     _withFields - Устанавливаем, что результат надо возвращать с подключенными дополнительными полями. Например $CI->linkerton->_withFields()->_getNext(1);
 
@@ -52,7 +52,7 @@ class Linkerton extends MY_Controller
 
             return true;
         }
-        
+
         return false;
     }
 
@@ -97,7 +97,7 @@ class Linkerton extends MY_Controller
 
             $result = [];
 
-            $offset = $pageNum * $this->category['per_page'];
+            $offset = 0;
 
             if ($checkNext) {
                 $offset++;
@@ -107,8 +107,8 @@ class Linkerton extends MY_Controller
                 $offset += $indent;
             }
 
-            $result['pages'] = $this->db->get('content', $this->category['per_page'], $offset)->result_array();
-            
+            $result['pages'] = $this->db->get('content', $this->category['per_page'] + $offset, $pageNum * $this->category['per_page'])->result_array();
+
             if ($indent) {
                 $result['pages'] = array_slice($result['pages'], $indent);
             }
@@ -322,8 +322,8 @@ class Linkerton extends MY_Controller
         }
 
         $this->db->where('name', 'linkerton')->update('components', [
-            'autoload' => '1', 
-            'enabled'  => '1', 
+            'autoload' => '1',
+            'enabled'  => '1',
             'in_menu'  => '0',
         ]);
     }
